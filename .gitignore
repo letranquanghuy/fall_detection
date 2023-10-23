@@ -1,0 +1,6 @@
+**/yolov8/data/*
+**/*.zip
+**/yolov8/get_data/*.mp4
+**/*.jpg
+**/*.png
+**/*.jpeg
