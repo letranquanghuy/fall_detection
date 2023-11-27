@@ -3,51 +3,74 @@ from PIL import Image
 import cv2
 import datetime
 import torch
+import time
+# from Movenet import pose_estimate
+import tensorflow as tf
+import tensorflow_hub as hub
+import numpy as np
+import copy
+
 print(torch.cuda.is_available())
-model = YOLO(r"D:\HCMUT\Ths\Thesis\yolov8\yolov8n.pt")
+model = YOLO(r"D:\HCMUT\Ths\Thesis\yolov8\models\best.pt")
 model.to('cuda')
-# results = model.predict(source=r'D:\HCMUT\Ths\Thesis\Movenet\test_1.jpg')
-# annotated_frame = results[0].plot()
-# # Display the annotated frame
-# cv2.imshow("YOLOv8 Inference", annotated_frame)
-# cv2.waitKey(0)
-# show image with PIL
-# for r in results:
-#     im_array = r.plot()  # plot a BGR numpy array of predictions
-#     im = Image.fromarray(im_array[..., ::-1])  # RGB PIL image
-#     im.show()  # show image
-#     im.save('results.jpg')  # save image
 
-# result = model.predict(show=True, source=0, conf=0.8)
-
-# import numpy as np
-# import cv2
-# cap = cv2.VideoCapture(0)
-# while(True):
-#      # Thu lan luot tung khung hinh (frame-by-frame)
-#      ret, frame = cap.read()
-#      # Thao tac tren frame (chuyen thanh anh xam)
-#      gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-#      # Hien thi frame
-#      cv2.imshow('frame', gray)
-#      if cv2.waitKey(1) & 0xFF == ord('q'):
-#           break
-# # Giai phong video khi thuc hien xong thao tac
-# cap.release()
-# cv2.destroyAllWindows()
-
-
-
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(r'D:\HCMUT\Ths\Thesis\yolov8\test.mp4')
 # define some constants
 CONFIDENCE_THRESHOLD = 0.8
 GREEN = (0, 255, 0) 
+
+modeltf = hub.load('D:\HCMUT\Ths\Thesis\Movenet\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
+movenet = modeltf.signatures['serving_default']
+# Threshold for 
+threshold = 0.05
+
+def pose_detect(model, img, threshold):
+    # A frame of video or an image, represented as an int32 tensor of shape: 256x256x3. Channels order: RGB with values in [0, 255].
+    tf_img = cv2.resize(img, (256,256))
+    tf_img = cv2.cvtColor(tf_img, cv2.COLOR_BGR2RGB)
+    tf_img = np.asarray(tf_img)
+    tf_img = np.expand_dims(tf_img,axis=0)
+
+    # Resize and pad the image to keep the aspect ratio and fit the expected size.
+    image = tf.cast(tf_img, dtype=tf.int32)
+
+    # Run model inference.
+    outputs = model(image)
+    # Output is a [1, 1, 17, 3] tensor.
+    keypoints = outputs['output_0']
+    keypoints = keypoints.numpy()[0,0]
+    if all(k[2] >= threshold for k in keypoints):
+        return keypoints
+    else:
+        return None
+
+def draw_keypoints(img, keypoints: np.ndarray):
+    y, x, _ = img.shape
+
+    # iterate through keypoints
+    if isinstance(keypoints, np.ndarray):
+        for i in range(len(keypoints)):
+            k = keypoints[i]
+            # The first two channels of the last dimension represents the yx coordinates (normalized to image frame, i.e. range in [0.0, 1.0]) of the 17 keypoints
+            yc = int(k[0] * y)
+            xc = int(k[1] * x)
+
+            # Draws a circle on the image for each keypoint
+            img = cv2.circle(img, (xc, yc), 2, (0, 255, 0), 5)
+    
+    return img
+
+def fill_black(img, xmin, ymin, xmax, ymax):
+    img_process = copy.deepcopy(img)
+    temp = cv2.rectangle(img_process, (xmin, ymin) , (xmax, ymax), (0, 0, 0), -1)
+    output = img-temp
+    return output
+
 while True:
     # start time to compute the fps
-    start = datetime.datetime.now()
-
+    last_time = time.time()
     ret, frame = cap.read()
-
+    pose_frame = copy.deepcopy(frame)
     # if there are no more frames to process, break out of the loop
     if not ret:
         break
@@ -64,21 +87,20 @@ while True:
         # confidence is greater than the minimum confidence
         if float(confidence) < CONFIDENCE_THRESHOLD:
             continue
+        xmin, ymin, xmax, ymax = int(data[0]), int(data[1]), int(data[2]), int(data[3])
 
+        temp_frame = fill_black(pose_frame, xmin, ymin, xmax, ymax)
+        cv2.imshow("test", temp_frame)
+        keypoints = pose_detect(movenet, temp_frame, threshold)
+
+        frame = draw_keypoints(frame, keypoints)
         # if the confidence is greater than the minimum confidence,
         # draw the bounding box on the frame
-        xmin, ymin, xmax, ymax = int(data[0]), int(data[1]), int(data[2]), int(data[3])
         cv2.rectangle(frame, (xmin, ymin) , (xmax, ymax), GREEN, 2)
-        # end time to compute the fps
-    end = datetime.datetime.now()
-    # show the time it took to process 1 frame
-    total = (end - start).total_seconds()
-    print(f"Time to process 1 frame: {total * 1000:.0f} milliseconds")
 
     # calculate the frame per second and draw it on the frame
-    fps = f"FPS: {1 / total:.2f}"
-    cv2.putText(frame, fps, (50, 50),
-                cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 8)
+    fps = 1/(time.time()-last_time)
+    frame = cv2.putText(frame, 'fps: '+ "%.2f"%(fps), (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
 
     # show the frame to our screen
     cv2.imshow("Frame", frame)
