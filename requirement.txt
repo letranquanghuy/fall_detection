@@ -1,7 +1,11 @@
 tensorflow==2.10
 tensorflow_hub==0.15.0
-ultralytics==8.0.198
+ultralytics==8.0.202
 opencv-python==4.8.1.78
+scikit-image==0.19.3
+filterpy==1.4.5
+scikit-learn==0.22.0
+numpy==1.23.1
 torch==1.12.1+cu113 
 torchvision==0.13.1+cu113 
 torchaudio==0.12.1 

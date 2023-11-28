@@ -13,7 +13,7 @@ movenet = model.signatures['serving_default']
 threshold = 0
 
 # Loads video source (0 is for main webcam)
-video_source = 'D:/HCMUT/Ths/Thesis/Movenet/testLSTM4.mp4'
+video_source = 'D:/HCMUT/Ths/Thesis/Movenet/testLSTM2.mp4'
 # video_source = 0
 cap = cv2.VideoCapture(video_source)
 
@@ -47,7 +47,9 @@ while True:
     outputs = movenet(image)
     # Output is a [1, 1, 17, 3] tensor.
     keypoints = outputs['output_0']
-
+    print('list:', list(keypoints))
+    print(keypoints)
+    break
     # iterate through keypoints
     for k in keypoints[0,0,:,:]:
         # Converts to numpy array

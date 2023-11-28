@@ -11,20 +11,20 @@ import tensorflow_hub as hub
 import numpy as np
 import torch
 
-video_path = os.path.join('.', 'data', 'test.mp4')
+video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/test.mp4'
 
 cap = cv2.VideoCapture(video_path)
 ret, frame = cap.read()
 
 print(torch.cuda.is_available())
-model = YOLO("best.pt")
+model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
 model.to('cuda')
 
 # define some constants
 CONFIDENCE_THRESHOLD = 0.8
 GREEN = (0, 255, 0) 
 
-modeltf = hub.load('D:\HCMUT\Ths\object-tracking-yolov8-deep-sort\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
+modeltf = hub.load('D:/HCMUT/Ths/object-tracking-yolov8-deep-sort/movenet_singlepose_thunder_4.tar/movenet_singlepose_thunder_4')
 movenet = modeltf.signatures['serving_default']
 # Threshold for 
 threshold = 0.05
@@ -71,18 +71,21 @@ def fill_black(img, xmin, ymin, xmax, ymax):
     output = img-temp
     return output
 
+def convert_data(keypoints: np.ndarray):
+    data = keypoints[:, :-1].flatten().tolist()
+    return tuple(data)
 
 tracker = Tracker()
 
 colors = [(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)) for j in range(10)]
 
-detection_threshold = 0.5
 while ret:
     start = time.time()
     results = model(frame)[0]
     y, x, _ = frame.shape
     pose_frame = copy.deepcopy(frame)
-
+    
+    # detect person
     detections = []
     for r in results.boxes.data.tolist():
         x1, y1, x2, y2, score, _ = r
@@ -93,14 +96,15 @@ while ret:
         y1 = int(y1)
         y2 = int(y2)
 
-        if score > detection_threshold:
-            detections.append([x1, y1, x2, y2, score])
+        detections.append([x1, y1, x2, y2, score])
+
+        # detect pose
         temp_frame = fill_black(pose_frame, x1, y1, x2, y2)
         keypoints = pose_detect(movenet, temp_frame, threshold)
-
         frame = draw_keypoints(frame, keypoints)
-    tracker.update(frame, detections)
 
+    # deep sort tracking person
+    tracker.update(frame, detections)
     for track in tracker.tracks:
         bbox = track.bbox
         x1, y1, x2, y2 = bbox
