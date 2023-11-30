@@ -4,7 +4,8 @@ import tensorflow_hub as hub
 import cv2
 import numpy as np
 import time
-
+import pandas as pd
+import glob
 
 def pose_detect(model, img, threshold):
     # A frame of video or an image, represented as an int32 tensor of shape: 256x256x3. Channels order: RGB with values in [0, 255].
@@ -46,44 +47,60 @@ def convert_data(keypoints: np.ndarray):
     data = keypoints[:, :-1].flatten().tolist()
     return tuple(data)
 
-# Download the model from TF Hub.
-model = hub.load('D:\HCMUT\Ths\Thesis\Movenet\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
-movenet = model.signatures['serving_default']
-# Threshold for 
-threshold = 0.05
+fall_data_path = "D:/HCMUT/Ths/Thesis/LSTM/video/FALL"
+fall_not_data_path = "D:/HCMUT/Ths/Thesis/LSTM/video/NOT_FALL"
 
-# Loads video source (0 is for main webcam)
-video_source = 'D:/HCMUT/Ths/Thesis/Movenet/testLSTM2.mp4'
-# video_source = 0
-cap = cv2.VideoCapture(video_source)
+for label in ["FALL"]:
+    data_list = []
+    n_time_steps = 10
+    for video_source in glob.glob(f'D:/HCMUT/Ths/Thesis/LSTM/video/{label}/*.mp4'):
+        print(video_source)
+        # Download the model from TF Hub.
+        model = hub.load('D:\HCMUT\Ths\Thesis\Movenet\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
+        movenet = model.signatures['serving_default']
+        # Threshold for 
+        threshold = 0.05
 
-# Checks errors while opening the Video Capture
-if not cap.isOpened():  
-    print('Error loading video')
-    quit()
+        # Loads video source (0 is for main webcam)
+        cap = cv2.VideoCapture(video_source)
 
+        # Checks errors while opening the Video Capture
+        if not cap.isOpened():  
+            print('Error loading video')
+            quit()
+        i = 0 
+        while True:
+            success, img = cap.read()
+            last_time = time.time()
+            if not success:
+                print('Error reding frame', i)
+                break
+            keypoints = pose_detect(movenet, img, threshold)
+            if not isinstance(keypoints, np.ndarray): 
+                continue
+            keypoints_data = convert_data(keypoints)
+            data_list.append(keypoints_data)
+            i += 1
+            img = draw_keypoints(img, keypoints)
 
+            fps = 1/(time.time()-last_time)
+            img = cv2.putText(img, 'fps: '+ "%.2f"%(fps), (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
+            # Shows image
+            cv2.imshow('Movenet', img)
+            # Waits for the next frame, checks if q was pressed to quit
+            if cv2.waitKey(1) == ord("q"):
+                break
+        print("Len data before increase:",len(data_list))  
+        len_data = len(data_list)      
+        while (len(data_list)%n_time_steps != 0):
+            if len_data%n_time_steps >= 5:
+                data_list.append(data_list[-1])
+            else:
+                data_list.pop(-1)
+        print("Len data after increase:",len(data_list))       
+        cap.release()
+        cv2.destroyAllWindows()
 
-
-while True:
-    success, img = cap.read()
-    last_time = time.time()
-    if not success:
-        print('Error reding frame')
-        quit()
-    keypoints = pose_detect(movenet, img, threshold)
-    data_keypoints = convert_data(keypoints)
-    print(keypoints) 
-    print(data_keypoints) 
-    break
-    img = draw_keypoints(img, keypoints)
-
-    fps = 1/(time.time()-last_time)
-    img = cv2.putText(img, 'fps: '+ "%.2f"%(fps), (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
-    # Shows image
-    cv2.imshow('Movenet', img)
-    # Waits for the next frame, checks if q was pressed to quit
-    if cv2.waitKey(1) == ord("q"):
-        break
-
-cap.release()
+    # Write vào file csv   
+    df  = pd.DataFrame(data_list)
+    df.to_csv("./LSTM/data/" + label + ".csv")

@@ -53,7 +53,7 @@ movenet = model.signatures['serving_default']
 threshold = 0.05
 
 # Loads video source (0 is for main webcam)
-video_source = 'D:/HCMUT/Ths/Thesis/Movenet/testLSTM2.mp4'
+video_source = 'D:/HCMUT/Ths/Thesis/LSTM/video/FALL/video188.mp4'
 # video_source = 0
 cap = cv2.VideoCapture(video_source)
 
@@ -64,18 +64,22 @@ if not cap.isOpened():
 
 
 
-
+i = 0
 while True:
+    time.sleep(0.2)
     success, img = cap.read()
     last_time = time.time()
     if not success:
         print('Error reding frame')
         quit()
     keypoints = pose_detect(movenet, img, threshold)
+    if not isinstance(keypoints, np.ndarray): 
+        continue
     data_keypoints = convert_data(keypoints)
+    i += 1
     print(keypoints) 
     print(data_keypoints) 
-    break
+    print(i)
     img = draw_keypoints(img, keypoints)
 
     fps = 1/(time.time()-last_time)
