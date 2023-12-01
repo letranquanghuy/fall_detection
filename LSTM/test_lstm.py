@@ -1,123 +1,112 @@
-import cv2
-import mediapipe as mp
-import numpy as np
-import threading
+# Import TF and TF Hub libraries.
 import tensorflow as tf
+import tensorflow_hub as hub
+import cv2
+import numpy as np
 import time
-label = "NOT_FALL"
-n_time_steps = 10
-lm_list = []
+import threading
 
-mpPose = mp.solutions.pose
-pose = mpPose.Pose()
-mpDraw = mp.solutions.drawing_utils
+def pose_detect(model, img, threshold):
+    # A frame of video or an image, represented as an int32 tensor of shape: 256x256x3. Channels order: RGB with values in [0, 255].
+    tf_img = cv2.resize(img, (256,256))
+    tf_img = cv2.cvtColor(tf_img, cv2.COLOR_BGR2RGB)
+    tf_img = np.asarray(tf_img)
+    tf_img = np.expand_dims(tf_img,axis=0)
 
-model = tf.keras.models.load_model("model_10.h5")
+    # Resize and pad the image to keep the aspect ratio and fit the expected size.
+    image = tf.cast(tf_img, dtype=tf.int32)
 
-
-
-def make_landmark_timestep(results):
-    c_lm = []
-    for id, lm in enumerate(results.pose_landmarks.landmark):
-        if id in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 17, 18, 19, 20, 21, 22, 29, 30, 31, 32]: continue
-        c_lm.append(lm.x)
-        c_lm.append(lm.y)
-        c_lm.append(lm.z)
-        c_lm.append(lm.visibility)
-    return c_lm
-
-
-def draw_landmark_on_image(mpDraw, results, img):
-    mpDraw.draw_landmarks(img, results.pose_landmarks, mpPose.POSE_CONNECTIONS)
-    for id, lm in enumerate(results.pose_landmarks.landmark):
-        h, w, c = img.shape
-        # print(id, lm)
-        cx, cy = int(lm.x * w), int(lm.y * h)
-        cv2.circle(img, (cx, cy), 5, (255, 0, 0), cv2.FILLED)
-    return img
-
-
-def draw_class_on_image(label, img):
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    bottomLeftCornerOfText = (10, 30)
-    fontScale = 1
-    if label == "FALL":
-        fontColor = (0, 0, 255)
+    # Run model inference.
+    outputs = model(image)
+    # Output is a [1, 1, 17, 3] tensor.
+    keypoints = outputs['output_0']
+    keypoints = keypoints.numpy()[0,0]
+    if all(k[2] >= threshold for k in keypoints):
+        return keypoints
     else:
-        fontColor = (0, 255, 0)
-    thickness = 2
-    lineType = 2
-    cv2.putText(img, label,
-                bottomLeftCornerOfText,
-                font,
-                fontScale,
-                fontColor,
-                thickness,
-                lineType)
+        return None
+
+def draw_keypoints(img, keypoints: np.ndarray):
+    y, x, _ = img.shape
+
+    # iterate through keypoints
+    if isinstance(keypoints, np.ndarray):
+        for i in range(len(keypoints)):
+            k = keypoints[i]
+            # The first two channels of the last dimension represents the yx coordinates (normalized to image frame, i.e. range in [0.0, 1.0]) of the 17 keypoints
+            yc = int(k[0] * y)
+            xc = int(k[1] * x)
+
+            # Draws a circle on the image for each keypoint
+            img = cv2.circle(img, (xc, yc), 2, (0, 255, 0), 5)
+    
     return img
 
+def convert_data(keypoints: np.ndarray):
+    data = keypoints[:, :-1].flatten().tolist()
+    return tuple(data)
 
 def detect(model, lm_list):
     global label
     lm_list = np.array(lm_list)
+    print(lm_list.shape)
     lm_list = np.expand_dims(lm_list, axis=0)
-    # print(lm_list.shape)
     results = model.predict(lm_list)
     predicted_class = np.argmax(results)
-    # print(predicted_class)
-    # if results[0][0] > 0.90:
+
+    print(results)
+    print(predicted_class)
     if predicted_class == 1:     
         label = "FALL"
     else:
         label = "NOT FALL"
     return label
 
-cap = cv2.VideoCapture(0)
-# cap = cv2.VideoCapture('data/NOT_FALL/video1.mp4')
-# cap = cv2.VideoCapture('data/FALL/orgi.mp4')
-cap = cv2.VideoCapture('test__LSTM.mp4')
+video_source = "D:/HCMUT/Ths/Thesis/LSTM/test.mp4"
+label = "NOT_FALL"
+data_list = []
+n_time_steps = 10
+model_lstm = tf.keras.models.load_model("D:/HCMUT/Ths/Thesis/LSTM/output/model.h5")
+# Download the model from TF Hub.
+model = hub.load('D:/HCMUT/Ths/Thesis/Movenet/movenet_singlepose_thunder_4.tar/movenet_singlepose_thunder_4')
+movenet = model.signatures['serving_default']
+# Threshold for 
+threshold = 0.05
 
-if (cap.isOpened() == False):
-    print("Error opening the video file")
+# Loads video source (0 is for main webcam)
+cap = cv2.VideoCapture(video_source)
 
-
-i = 0
-warmup_frames = 0
-
+# Checks errors while opening the Video Capture
+if not cap.isOpened():  
+    print('Error loading video')
+    quit()
+i = 0 
 while True:
-    start_time = time.time()
     success, img = cap.read()
-
-    scale_percent = 40 # percent of original size
-    width = int(img.shape[1] * scale_percent / 100)
-    height = int(img.shape[0] * scale_percent / 100)
-    dim = (width, height)
-    # resize image
-    img = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)    
-
-    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    results = pose.process(imgRGB)
-    i = i + 1
-    if i > warmup_frames:
-        # print("Start detect....")
-
-        if results.pose_landmarks:
-            c_lm = make_landmark_timestep(results)
-
-            lm_list.append(c_lm)
-            if len(lm_list) == n_time_steps:
-                # predict
-                t1 = threading.Thread(target=detect, args=(model, lm_list,))
-                t1.start()
-                lm_list = []
-
-            img = draw_landmark_on_image(mpDraw, results, img)
-
-    img = draw_class_on_image(label, img)
-    cv2.imshow("Image", img)
-    print("fps: ", 1/(time.time() - start_time))
-    if cv2.waitKey(1) == ord('q'):
+    last_time = time.time()
+    if not success:
+        print('Error reding frame', i)
+        break
+    keypoints = pose_detect(movenet, img, threshold)
+    if not isinstance(keypoints, np.ndarray): 
+        continue
+    keypoints_data = convert_data(keypoints)
+    data_list.append(keypoints_data)
+    if len(data_list) == n_time_steps:
+        # predict
+        t1 = threading.Thread(target=detect, args=(model_lstm, data_list,))
+        t1.start()
+        data_list = []
+    img = draw_keypoints(img, keypoints)
+    fps = 1/(time.time()-last_time)
+    img = cv2.putText(img, 'fps: '+ "%.2f"%(fps), (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
+    img = cv2.putText(img, 'Status: '+ f"{label}", (25, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
+    # Shows image
+    cv2.imshow('Movenet', img)
+    # Waits for the next frame, checks if q was pressed to quit
+    if cv2.waitKey(1) == ord("q"):
         break
 
 cap.release()
 cv2.destroyAllWindows()
+
