@@ -34,7 +34,7 @@ colors = [(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255
 
 status_people = {}
 n_time_steps = 10
-
+model_lstm = tf.keras.models.load_model("D:/HCMUT/Ths/Thesis/LSTM/output/model.h5")
 def pose_detect(model, img, threshold):
     # A frame of video or an image, represented as an int32 tensor of shape: 256x256x3. Channels order: RGB with values in [0, 255].
     tf_img = cv2.resize(img, (256,256))
@@ -81,6 +81,19 @@ def convert_data(keypoints: np.ndarray):
     data = keypoints[:, :-1].flatten().tolist()
     return tuple(data)
 
+def detect(model, lm_list):
+    global label
+    lm_list = np.array(lm_list)
+    lm_list = np.expand_dims(lm_list, axis=0)
+    results = model.predict(lm_list)
+    predicted_class = np.argmax(results)
+
+    if predicted_class == 1:     
+        label = "FALL"
+    else:
+        label = "NOT FALL"
+    return label
+
 while ret:
     start = time.time()
     results = model(frame)[0]
@@ -113,9 +126,9 @@ while ret:
         track_id = track.track_id
         track_id_list.append(track_id)
         cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
-
+        frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
         if track_id not in status_people.keys():
-            status_people[track_id] = {"data": [], "count": 0}
+            status_people[track_id] = {"data": [], "count": 0, 'status': 'NOT_FALL', 'bbox': tuple(map(lambda x: copy.deepcopy(x), [x1, y1, x2, y2]))}
         else:
             if len(status_people[track_id]['data']) == n_time_steps:
                 status_people[track_id]['data'].pop(0)
@@ -126,10 +139,12 @@ while ret:
         if isinstance(keypoints, np.ndarray): 
             keypoints = convert_data(keypoints)
             status_people[track_id]['data'].append(keypoints)
+            status_people[track_id]['bbox'] = tuple(map(lambda x: copy.deepcopy(x), [x1, y1, x2, y2]))
 
     print(track_id_list)
     temp_status_people = copy.deepcopy(status_people)
-    for track_id_ in temp_status_people:
+    for track_id_ in temp_status_people.keys():
+        x1, y1, x2, y2 = status_people[track_id_]['bbox']
         if track_id_ not in track_id_list:
             status_people[track_id_]['count'] += 1
         else:
@@ -137,7 +152,16 @@ while ret:
 
         if status_people[track_id_]['count'] > 4:
             del status_people[track_id_]
-    print(status_people)
+            continue
+        if len(status_people[track_id_]['data']) == n_time_steps:
+            pose_status = detect(model_lstm, status_people[track_id_]['data'])
+            status_people[track_id_]['status'] = pose_status
+        print(track_id_)
+        print(x1)
+        print(y1)
+        frame = cv2.putText(frame, status_people[track_id_]['status'], (x1+20, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
+
+
     end = time.time()
     fps = round(1/(end-start))
     frame = cv2.putText(frame, 'fps: '+ "%.2f"%(fps), (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
