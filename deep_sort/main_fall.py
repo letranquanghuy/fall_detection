@@ -11,30 +11,36 @@ import tensorflow_hub as hub
 import numpy as np
 import torch
 
+# VIDEO SOURCE
 video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/test.mp4'
-
 cap = cv2.VideoCapture(video_path)
 ret, frame = cap.read()
 
+# YOLOv8
+# Load model Yolov8
 print(torch.cuda.is_available())
 model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
 model.to('cuda')
 
 # define some constants
-CONFIDENCE_THRESHOLD = 0.8
-GREEN = (0, 255, 0) 
+yolo_threshold = 0.8
 
-modeltf = hub.load('D:/HCMUT/Ths/object-tracking-yolov8-deep-sort/movenet_singlepose_thunder_4.tar/movenet_singlepose_thunder_4')
+# MOVENET
+# Load model Movenet
+modeltf = hub.load('D:/HCMUT/Ths/Thesis/deep_sort/movenet_singlepose_thunder_4.tar/movenet_singlepose_thunder_4')
+# modeltf = hub.load('D:/HCMUT/Ths/Thesis/deep_sort/movenet_singlepose_lightning_4.tar/movenet_singlepose_lightning_4')
 movenet = modeltf.signatures['serving_default']
-# Threshold for 
-threshold = 0.05
+keypoints_threshold = 0.05
+
+# LSTM
+# Load model LSTM
+status_people = {}
+n_time_steps = 10
+model_lstm = tf.keras.models.load_model("D:/HCMUT/Ths/Thesis/LSTM/output/model.h5")
 
 tracker = Tracker()
 colors = [(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)) for j in range(10)]
 
-status_people = {}
-n_time_steps = 10
-model_lstm = tf.keras.models.load_model("D:/HCMUT/Ths/Thesis/LSTM/output/model.h5")
 def pose_detect(model, img, threshold):
     # A frame of video or an image, represented as an int32 tensor of shape: 256x256x3. Channels order: RGB with values in [0, 255].
     tf_img = cv2.resize(img, (256,256))
@@ -104,62 +110,53 @@ while ret:
     detections = []
     for r in results.boxes.data.tolist():
         x1, y1, x2, y2, score, _ = r
-        if float(score) < CONFIDENCE_THRESHOLD:
+        if float(score) < yolo_threshold:
             continue
-        x1 = int(x1)
-        x2 = int(x2)
-        y1 = int(y1)
-        y2 = int(y2)
 
-        detections.append([x1, y1, x2, y2, score])
+        detections.append([int(x1), int(y1), int(x2), int(y2), score])
 
-    track_id_list = []
     # deep sort tracking person
+    track_id_list = []
     tracker.update(frame, detections)
     for track in tracker.tracks:
         bbox = track.bbox
-        x1, y1, x2, y2 = bbox
-        x1 = int(x1)
-        x2 = int(x2)
-        y1 = int(y1)
-        y2 = int(y2)
+        x1, y1, x2, y2 = list(map(int, bbox))
         track_id = track.track_id
         track_id_list.append(track_id)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
-        frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
         if track_id not in status_people.keys():
-            status_people[track_id] = {"data": [], "count": 0, 'status': 'NOT_FALL', 'bbox': tuple(map(lambda x: copy.deepcopy(x), [x1, y1, x2, y2]))}
+            status_people[track_id] = {"data": [], "count": 0, 'status': 'NOT_FALL', 'bbox': (x1, y1, x2, y2)}
         else:
             if len(status_people[track_id]['data']) == n_time_steps:
                 status_people[track_id]['data'].pop(0)
         # detect pose
         temp_frame = fill_black(pose_frame, x1, y1, x2, y2)
-        keypoints = pose_detect(movenet, temp_frame, threshold)
-        frame = draw_keypoints(frame, keypoints)
+        keypoints = pose_detect(movenet, temp_frame, keypoints_threshold)
+        # frame = draw_keypoints(frame, keypoints)
         if isinstance(keypoints, np.ndarray): 
             keypoints = convert_data(keypoints)
             status_people[track_id]['data'].append(keypoints)
-            status_people[track_id]['bbox'] = tuple(map(lambda x: copy.deepcopy(x), [x1, y1, x2, y2]))
+            status_people[track_id]['bbox'] = (x1, y1, x2, y2)
 
-    print(track_id_list)
+    # Fall classification
     temp_status_people = copy.deepcopy(status_people)
-    for track_id_ in temp_status_people.keys():
-        x1, y1, x2, y2 = status_people[track_id_]['bbox']
-        if track_id_ not in track_id_list:
-            status_people[track_id_]['count'] += 1
+    for track_id in temp_status_people.keys():
+        x1, y1, x2, y2 = status_people[track_id]['bbox']
+        if track_id not in track_id_list:
+            status_people[track_id]['count'] += 1
         else:
-            status_people[track_id_]['count'] = 0
+            status_people[track_id]['count'] = 0
 
-        if status_people[track_id_]['count'] > 4:
-            del status_people[track_id_]
+        if status_people[track_id]['count'] > 4:
+            del status_people[track_id]
             continue
-        if len(status_people[track_id_]['data']) == n_time_steps:
-            pose_status = detect(model_lstm, status_people[track_id_]['data'])
-            status_people[track_id_]['status'] = pose_status
-        print(track_id_)
-        print(x1)
-        print(y1)
-        frame = cv2.putText(frame, status_people[track_id_]['status'], (x1+20, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36,255,12), 2)
+        if len(status_people[track_id]['data']) == n_time_steps:
+            pose_status = detect(model_lstm, status_people[track_id]['data'])
+            status_people[track_id]['status'] = pose_status
+        
+        if track_id in track_id_list:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
+            frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
+            frame = cv2.putText(frame, status_people[track_id]['status'], (x1+30, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
 
 
     end = time.time()
