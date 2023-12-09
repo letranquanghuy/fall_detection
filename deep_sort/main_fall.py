@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 # VIDEO SOURCE
-video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/test.mp4'
+video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/testLSTM4.mp4'
 cap = cv2.VideoCapture(video_path)
 ret, frame = cap.read()
 
@@ -23,7 +23,7 @@ model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
 model.to('cuda')
 
 # define some constants
-yolo_threshold = 0.8
+yolo_threshold = 0.7
 
 # MOVENET
 # Load model Movenet
@@ -124,7 +124,14 @@ while ret:
         track_id = track.track_id
         track_id_list.append(track_id)
         if track_id not in status_people.keys():
-            status_people[track_id] = {"data": [], "count": 0, 'status': 'NOT_FALL', 'bbox': (x1, y1, x2, y2)}
+            status_people[track_id] = {
+                                        'data': [], 
+                                        'bbox': (x1, y1, x2, y2), 
+                                        'status': 'NOT_FALL', 
+                                        'is_falled': False, 
+                                        'lost_obj_count': 0, 
+                                        'recover_count': 0,
+                                       }
         else:
             if len(status_people[track_id]['data']) == n_time_steps:
                 status_people[track_id]['data'].pop(0)
@@ -142,16 +149,32 @@ while ret:
     for track_id in temp_status_people.keys():
         x1, y1, x2, y2 = status_people[track_id]['bbox']
         if track_id not in track_id_list:
-            status_people[track_id]['count'] += 1
+            status_people[track_id]['lost_obj_count'] += 1
         else:
-            status_people[track_id]['count'] = 0
+            status_people[track_id]['lost_obj_count'] = 0
 
-        if status_people[track_id]['count'] > 4:
+        if status_people[track_id]['lost_obj_count'] > 4:
             del status_people[track_id]
             continue
+
         if len(status_people[track_id]['data']) == n_time_steps:
             pose_status = detect(model_lstm, status_people[track_id]['data'])
-            status_people[track_id]['status'] = pose_status
+            # To avoid noise affecting the pose detection result, we will use the recover counter
+            # After fall if status change to not fall, recover counter will count
+            # If recover counter equal 5 consecutive frame, status will change to NOT FALL
+            if status_people[track_id]['is_falled'] and pose_status == 'NOT FALL':
+                status_people[track_id]['recover_count'] += 1
+
+            if pose_status == 'FALL':
+                status_people[track_id]['is_falled'] = True
+                status_people[track_id]['recover_count'] = 0
+            elif status_people[track_id]['recover_count'] == 5 and pose_status == 'NOT FALL':
+                status_people[track_id]['is_falled'] = False
+
+            if status_people[track_id]['is_falled']:
+                status_people[track_id]['status'] = 'FALL'
+            else:
+                status_people[track_id]['status'] = pose_status
         
         if track_id in track_id_list:
             cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
