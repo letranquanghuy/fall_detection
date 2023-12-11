@@ -10,6 +10,14 @@ import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
 import torch
+import modules.utils as utils
+from modules.autobackend import AutoBackend
+import pathlib
+
+
+RED =   (0, 0, 255) 
+GREEN = (0, 255, 0) 
+BLUE =  (255, 0, 0) 
 
 # VIDEO SOURCE
 video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/testLSTM4.mp4'
@@ -19,8 +27,14 @@ ret, frame = cap.read()
 # YOLOv8
 # Load model Yolov8
 print(torch.cuda.is_available())
-model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
-model.to('cuda')
+weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.engine'
+file_extension = pathlib.Path(weight_path).suffix
+if(file_extension == ".engine"):
+    model = AutoBackend('D:/HCMUT/Ths/Thesis/deep_sort/best.engine', device=torch.device('cuda:0'), fp16=True)
+    model.warmup()
+else:
+    model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
+    model.to('cuda')
 
 # define some constants
 yolo_threshold = 0.7
@@ -101,15 +115,35 @@ def fall_detect(model, lm_list):
     return label
 
 
-def yolo_detect_tensorrt():
-    pass
+def yolo_detect_tensorrt(model, source, image):
+    # Preprocess
+    im = utils.preprocess(image)
 
+    # Inference
+    preds = model(im)
+
+    # Post Process
+    results = utils.postprocess(preds, im, image, model.names, source)
+    return results[0]
+
+def yolo_detect(model, image):
+    return model(image)[0]
+
+# Class Name and Colors
+label_map = model.names
+COLORS = [[random.randint(0, 255) for _ in range(3)] for _ in label_map]
+# FPS Detection
+frame_count = 0
+total_fps = 0
+avg_fps = 0
 while ret:
     start = time.time()
-    results = model(frame)[0]
     y, x, _ = frame.shape
     pose_frame = copy.deepcopy(frame)
-    
+    if(file_extension == ".engine"):
+        results = yolo_detect_tensorrt(model, video_path, frame)
+    else:
+        results = yolo_detect(model, frame)
     # detect person
     detections = []
     for r in results.boxes.data.tolist():

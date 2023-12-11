@@ -12,6 +12,12 @@ import numpy as np
 import torch
 import modules.utils as utils
 from modules.autobackend import AutoBackend
+import pathlib
+
+
+RED =   (0, 0, 255) 
+GREEN = (0, 255, 0) 
+BLUE =  (255, 0, 0) 
 
 # VIDEO SOURCE
 video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/test.mp4'
@@ -21,10 +27,15 @@ ret, frame = cap.read()
 # YOLOv8
 # Load model Yolov8
 print(torch.cuda.is_available())
-model = AutoBackend('D:/HCMUT/Ths/Thesis/deep_sort/best.engine', device=torch.device('cuda:0'), fp16=True)
+weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.engine'
+file_extension = pathlib.Path(weight_path).suffix
+if(file_extension == ".engine"):
+    model = AutoBackend('D:/HCMUT/Ths/Thesis/deep_sort/best.engine', device=torch.device('cuda:0'), fp16=True)
+else:
+    model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
+    model.to('cuda')
 # define some constants
 CONFIDENCE_THRESHOLD = 0.8
-GREEN = (0, 255, 0) 
 # Warmup
 model.warmup()
 
@@ -117,15 +128,9 @@ def yolo_detect_tensorrt(model, source, image):
     # Post Process
     results = utils.postprocess(preds, im, image, model.names, source)
     return results[0]
-    d = results[0].boxes
-    # Get information from result
-    tensor_size = d.cls.size()[0]
-    if(tensor_size > 1):
-        cls_, conf, box = d.cls.squeeze(), d.conf.squeeze(), d.xyxy.squeeze()
-    else:
-        cls_, conf, box = d.cls, d.conf, d.xyxy
 
-    return cls_, conf, box
+def yolo_detect(model, image):
+    return model(image)[0]
 
 # Class Name and Colors
 label_map = model.names
@@ -139,9 +144,12 @@ while ret:
     y, x, _ = frame.shape
     ret, frame = cap.read()
     pose_frame = copy.deepcopy(frame)
+    if(file_extension == ".engine"):
+        detections = yolo_detect_tensorrt(model, video_path, frame)
+    else:
+        detections = yolo_detect(model, frame)
 
-    detections = yolo_detect_tensorrt(model, video_path, frame)
-        # loop over the detections
+    # loop over the detections
     for data in detections.boxes.data.tolist():
         # extract the confidence (i.e., probability) associated with the detection
         confidence = data[4]
