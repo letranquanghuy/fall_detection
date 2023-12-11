@@ -87,7 +87,7 @@ def convert_data(keypoints: np.ndarray):
     data = keypoints[:, :-1].flatten().tolist()
     return tuple(data)
 
-def detect(model, lm_list):
+def fall_detect(model, lm_list):
     global label
     lm_list = np.array(lm_list)
     lm_list = np.expand_dims(lm_list, axis=0)
@@ -99,6 +99,10 @@ def detect(model, lm_list):
     else:
         label = "NOT FALL"
     return label
+
+
+def yolo_detect_tensorrt():
+    pass
 
 while ret:
     start = time.time()
@@ -158,7 +162,7 @@ while ret:
             continue
 
         if len(status_people[track_id]['data']) == n_time_steps:
-            pose_status = detect(model_lstm, status_people[track_id]['data'])
+            pose_status = fall_detect(model_lstm, status_people[track_id]['data'])
             # To avoid noise affecting the pose detection result, we will use the recover counter
             # After fall if status change to not fall, recover counter will count
             # If recover counter equal 5 consecutive frame, status will change to NOT FALL

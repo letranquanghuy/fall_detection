@@ -89,11 +89,12 @@ while True:
             continue
         xmin, ymin, xmax, ymax = int(data[0]), int(data[1]), int(data[2]), int(data[3])
 
-        temp_frame = fill_black(pose_frame, xmin, ymin, xmax, ymax)
-        cv2.imshow("test", temp_frame)
-        keypoints = pose_detect(movenet, temp_frame, threshold)
+        # temp_frame = fill_black(pose_frame, xmin, ymin, xmax, ymax)
+        # cv2.imshow("test", temp_frame)
+        # keypoints = pose_detect(movenet, temp_frame, threshold)
 
-        frame = draw_keypoints(frame, keypoints)
+        # frame = draw_keypoints(frame, keypoints)
+
         # if the confidence is greater than the minimum confidence,
         # draw the bounding box on the frame
         cv2.rectangle(frame, (xmin, ymin) , (xmax, ymax), GREEN, 2)
