@@ -20,7 +20,7 @@ GREEN = (0, 255, 0)
 BLUE =  (255, 0, 0) 
 
 # VIDEO SOURCE
-video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/testLSTM4.mp4'
+video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/test.mp4'
 cap = cv2.VideoCapture(video_path)
 ret, frame = cap.read()
 
@@ -28,12 +28,13 @@ ret, frame = cap.read()
 # Load model Yolov8
 print(torch.cuda.is_available())
 weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.engine'
+# weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.pt'
 file_extension = pathlib.Path(weight_path).suffix
 if(file_extension == ".engine"):
-    model = AutoBackend('D:/HCMUT/Ths/Thesis/deep_sort/best.engine', device=torch.device('cuda:0'), fp16=True)
+    model = AutoBackend(weight_path, device=torch.device('cuda:0'), fp16=True)
     model.warmup()
 else:
-    model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
+    model = YOLO(weight_path)
     model.to('cuda')
 
 # define some constants
@@ -182,42 +183,42 @@ while ret:
             status_people[track_id]['data'].append(keypoints)
             status_people[track_id]['bbox'] = (x1, y1, x2, y2)
 
-    # Fall classification
-    temp_status_people = copy.deepcopy(status_people)
-    for track_id in temp_status_people.keys():
-        x1, y1, x2, y2 = status_people[track_id]['bbox']
-        if track_id not in track_id_list:
-            status_people[track_id]['lost_obj_count'] += 1
-        else:
-            status_people[track_id]['lost_obj_count'] = 0
+    # # Fall classification
+    # temp_status_people = copy.deepcopy(status_people)
+    # for track_id in temp_status_people.keys():
+    #     x1, y1, x2, y2 = status_people[track_id]['bbox']
+    #     if track_id not in track_id_list:
+    #         status_people[track_id]['lost_obj_count'] += 1
+    #     else:
+    #         status_people[track_id]['lost_obj_count'] = 0
 
-        if status_people[track_id]['lost_obj_count'] > 4:
-            del status_people[track_id]
-            continue
+    #     if status_people[track_id]['lost_obj_count'] > 4:
+    #         del status_people[track_id]
+    #         continue
 
-        if len(status_people[track_id]['data']) == n_time_steps:
-            pose_status = fall_detect(model_lstm, status_people[track_id]['data'])
-            # To avoid noise affecting the pose detection result, we will use the recover counter
-            # After fall if status change to not fall, recover counter will count
-            # If recover counter equal 5 consecutive frame, status will change to NOT FALL
-            if status_people[track_id]['is_falled'] and pose_status == 'NOT FALL':
-                status_people[track_id]['recover_count'] += 1
+    #     if len(status_people[track_id]['data']) == n_time_steps:
+    #         pose_status = fall_detect(model_lstm, status_people[track_id]['data'])
+    #         # To avoid noise affecting the pose detection result, we will use the recover counter
+    #         # After fall if status change to not fall, recover counter will count
+    #         # If recover counter equal 5 consecutive frame, status will change to NOT FALL
+    #         if status_people[track_id]['is_falled'] and pose_status == 'NOT FALL':
+    #             status_people[track_id]['recover_count'] += 1
 
-            if pose_status == 'FALL':
-                status_people[track_id]['is_falled'] = True
-                status_people[track_id]['recover_count'] = 0
-            elif status_people[track_id]['recover_count'] == 5 and pose_status == 'NOT FALL':
-                status_people[track_id]['is_falled'] = False
+    #         if pose_status == 'FALL':
+    #             status_people[track_id]['is_falled'] = True
+    #             status_people[track_id]['recover_count'] = 0
+    #         elif status_people[track_id]['recover_count'] == 5 and pose_status == 'NOT FALL':
+    #             status_people[track_id]['is_falled'] = False
 
-            if status_people[track_id]['is_falled']:
-                status_people[track_id]['status'] = 'FALL'
-            else:
-                status_people[track_id]['status'] = pose_status
+    #         if status_people[track_id]['is_falled']:
+    #             status_people[track_id]['status'] = 'FALL'
+    #         else:
+    #             status_people[track_id]['status'] = pose_status
         
-        if track_id in track_id_list:
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
-            frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
-            frame = cv2.putText(frame, status_people[track_id]['status'], (x1+30, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
+    #     if track_id in track_id_list:
+    #         cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
+    #         frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
+    #         frame = cv2.putText(frame, status_people[track_id]['status'], (x1+30, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
 
 
     end = time.time()

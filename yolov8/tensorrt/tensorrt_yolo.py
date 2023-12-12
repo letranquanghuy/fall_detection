@@ -8,4 +8,4 @@ from ultralytics import YOLO
 model = YOLO('yolov8/models/train5/weights/best.pt')  # load a custom trained model
 
 # Export the model
-model.export(format='engine', half=True, workspace=12)
+model.export(format='engine', half=True, workspace=4)

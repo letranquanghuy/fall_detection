@@ -50,7 +50,7 @@ def convert_data(keypoints: np.ndarray):
 fall_data_path = "D:/HCMUT/Ths/Thesis/LSTM/video/FALL"
 fall_not_data_path = "D:/HCMUT/Ths/Thesis/LSTM/video/NOT_FALL"
 
-for label in ["FALL"]:
+for label in ["FALL", 'NOT_FALL', 'LIE']:
     data_list = []
     n_time_steps = 10
     for video_source in glob.glob(f'D:/HCMUT/Ths/Thesis/LSTM/video/{label}/*.mp4'):

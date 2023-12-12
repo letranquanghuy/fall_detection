@@ -28,16 +28,17 @@ ret, frame = cap.read()
 # Load model Yolov8
 print(torch.cuda.is_available())
 weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.engine'
+# weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.pt'
 file_extension = pathlib.Path(weight_path).suffix
 if(file_extension == ".engine"):
-    model = AutoBackend('D:/HCMUT/Ths/Thesis/deep_sort/best.engine', device=torch.device('cuda:0'), fp16=True)
+    model = AutoBackend(weight_path, device=torch.device('cuda:0'), fp16=True)
+    model.warmup()
 else:
-    model = YOLO("D:/HCMUT/Ths/Thesis/deep_sort/best.pt")
+    model = YOLO(weight_path)
     model.to('cuda')
 # define some constants
 CONFIDENCE_THRESHOLD = 0.8
 # Warmup
-model.warmup()
 
 # define some constants
 yolo_threshold = 0.7
