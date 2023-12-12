@@ -7,6 +7,7 @@ import time
 from ultralytics import YOLO
 from tracker import Tracker
 import tensorflow as tf
+import tensorflow as keras
 import tensorflow_hub as hub
 import numpy as np
 import torch
@@ -20,7 +21,7 @@ GREEN = (0, 255, 0)
 BLUE =  (255, 0, 0) 
 
 # VIDEO SOURCE
-video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/test.mp4'
+video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/testLSTM2.mp4'
 cap = cv2.VideoCapture(video_path)
 ret, frame = cap.read()
 
@@ -53,8 +54,39 @@ status_people = {}
 n_time_steps = 10
 model_lstm = tf.keras.models.load_model("D:/HCMUT/Ths/Thesis/LSTM/output/model.h5")
 
+def wrap_frozen_graph(graph_def, inputs, outputs, print_graph=False):
+    def _imports_graph_def():
+        tf.compat.v1.import_graph_def(graph_def, name="")
+
+    wrapped_import = tf.compat.v1.wrap_function(_imports_graph_def, [])
+    import_graph = wrapped_import.graph
+
+    if print_graph == True:
+        print("-" * 50)
+        print("Frozen model layers: ")
+        layers = [op.name for op in import_graph.get_operations()]
+        for layer in layers:
+            print(layer)
+        print("-" * 50)
+
+    return wrapped_import.prune(
+        tf.nest.map_structure(import_graph.as_graph_element, inputs),
+        tf.nest.map_structure(import_graph.as_graph_element, outputs))
+
+# Load frozen graph using TensorFlow 1.x functions
+with tf.io.gfile.GFile("D:/HCMUT/Ths/Thesis/LSTM/output/frozen_graph.pb", "rb") as f:
+    graph_def = tf.compat.v1.GraphDef()
+    loaded = graph_def.ParseFromString(f.read())
+
+# Wrap frozen graph to ConcreteFunctions
+frozen_func = wrap_frozen_graph(graph_def=graph_def,
+                                inputs=["x:0"],
+                                outputs=["Identity:0"],
+                                print_graph=True)
+
 tracker = Tracker()
 colors = [(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)) for j in range(10)]
+
 
 def pose_detect(model, img, threshold):
     # A frame of video or an image, represented as an int32 tensor of shape: 256x256x3. Channels order: RGB with values in [0, 255].
@@ -103,7 +135,6 @@ def convert_data(keypoints: np.ndarray):
     return tuple(data)
 
 def fall_detect(model, lm_list):
-    global label
     lm_list = np.array(lm_list)
     lm_list = np.expand_dims(lm_list, axis=0)
     results = model.predict(lm_list)
@@ -115,6 +146,17 @@ def fall_detect(model, lm_list):
         label = "NOT FALL"
     return label
 
+def fall_detect_frozen_graph(frozen_func, lm_list):
+    lm_list = np.array(lm_list)
+    input_predict_expand = lm_list[np.newaxis,:]
+    input_predict_expand = np.array(input_predict_expand,np.float32)
+    frozen_graph_predictions = frozen_func(x=tf.constant(input_predict_expand))[0]
+    predicted_class = np.argmax(frozen_graph_predictions)
+    if predicted_class == 1:     
+        label = "FALL"
+    else:
+        label = "NOT FALL"
+    return label
 
 def yolo_detect_tensorrt(model, source, image):
     # Preprocess
@@ -183,42 +225,43 @@ while ret:
             status_people[track_id]['data'].append(keypoints)
             status_people[track_id]['bbox'] = (x1, y1, x2, y2)
 
-    # # Fall classification
-    # temp_status_people = copy.deepcopy(status_people)
-    # for track_id in temp_status_people.keys():
-    #     x1, y1, x2, y2 = status_people[track_id]['bbox']
-    #     if track_id not in track_id_list:
-    #         status_people[track_id]['lost_obj_count'] += 1
-    #     else:
-    #         status_people[track_id]['lost_obj_count'] = 0
+    # Fall classification
+    temp_status_people = copy.deepcopy(status_people)
+    for track_id in temp_status_people.keys():
+        x1, y1, x2, y2 = status_people[track_id]['bbox']
+        if track_id not in track_id_list:
+            status_people[track_id]['lost_obj_count'] += 1
+        else:
+            status_people[track_id]['lost_obj_count'] = 0
 
-    #     if status_people[track_id]['lost_obj_count'] > 4:
-    #         del status_people[track_id]
-    #         continue
+        if status_people[track_id]['lost_obj_count'] > 4:
+            del status_people[track_id]
+            continue
 
-    #     if len(status_people[track_id]['data']) == n_time_steps:
-    #         pose_status = fall_detect(model_lstm, status_people[track_id]['data'])
-    #         # To avoid noise affecting the pose detection result, we will use the recover counter
-    #         # After fall if status change to not fall, recover counter will count
-    #         # If recover counter equal 5 consecutive frame, status will change to NOT FALL
-    #         if status_people[track_id]['is_falled'] and pose_status == 'NOT FALL':
-    #             status_people[track_id]['recover_count'] += 1
+        if len(status_people[track_id]['data']) == n_time_steps:
+            # pose_status = fall_detect(model_lstm, status_people[track_id]['data'])
+            pose_status = fall_detect_frozen_graph(frozen_func, status_people[track_id]['data'])
+            # To avoid noise affecting the pose detection result, we will use the recover counter
+            # After fall if status change to not fall, recover counter will count
+            # If recover counter equal 5 consecutive frame, status will change to NOT FALL
+            if status_people[track_id]['is_falled'] and pose_status == 'NOT FALL':
+                status_people[track_id]['recover_count'] += 1
 
-    #         if pose_status == 'FALL':
-    #             status_people[track_id]['is_falled'] = True
-    #             status_people[track_id]['recover_count'] = 0
-    #         elif status_people[track_id]['recover_count'] == 5 and pose_status == 'NOT FALL':
-    #             status_people[track_id]['is_falled'] = False
+            if pose_status == 'FALL':
+                status_people[track_id]['is_falled'] = True
+                status_people[track_id]['recover_count'] = 0
+            elif status_people[track_id]['recover_count'] == 5 and pose_status == 'NOT FALL':
+                status_people[track_id]['is_falled'] = False
 
-    #         if status_people[track_id]['is_falled']:
-    #             status_people[track_id]['status'] = 'FALL'
-    #         else:
-    #             status_people[track_id]['status'] = pose_status
+            if status_people[track_id]['is_falled']:
+                status_people[track_id]['status'] = 'FALL'
+            else:
+                status_people[track_id]['status'] = pose_status
         
-    #     if track_id in track_id_list:
-    #         cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
-    #         frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
-    #         frame = cv2.putText(frame, status_people[track_id]['status'], (x1+30, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
+        if track_id in track_id_list:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
+            frame = cv2.putText(frame, str(track_id), (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
+            frame = cv2.putText(frame, status_people[track_id]['status'], (x1+30, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
 
 
     end = time.time()
