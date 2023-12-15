@@ -73,7 +73,8 @@ for label in ["FALL", 'NOT_FALL', 'LIE']:
             success, img = cap.read()
             last_time = time.time()
             if not success:
-                print('Error reding frame', i)
+                print('Total frame of this video:', i)
+                print('Error reding frame')
                 break
             keypoints = pose_detect(movenet, img, threshold)
             if not isinstance(keypoints, np.ndarray): 
