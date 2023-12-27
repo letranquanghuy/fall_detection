@@ -62,7 +62,7 @@ def detect(model, lm_list):
         label = "NOT FALL"
     return label
 
-video_source = "D:/HCMUT/Ths/Thesis/LSTM/test.mp4"
+video_source = 0
 label = "NOT_FALL"
 data_list = []
 n_time_steps = 10

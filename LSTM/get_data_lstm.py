@@ -50,14 +50,39 @@ def convert_data(keypoints: np.ndarray):
 fall_data_path = "D:/HCMUT/Ths/Thesis/LSTM/video/FALL"
 fall_not_data_path = "D:/HCMUT/Ths/Thesis/LSTM/video/NOT_FALL"
 
-for label in ["FALL", 'NOT_FALL', 'LIE']:
+def pad_to_square(image):
+    height, width = image.shape[:2]
+    if height < width:
+        diff = width - height
+        top = diff // 2
+        bottom = diff - top
+        left = 0
+        right = 0
+    else:
+        diff = height - width
+        top = 0
+        bottom = 0
+        left = diff // 2
+        right = diff - left
+
+    # Define the color for padding (you can change it as needed)
+    color = [0, 0, 0]  # Black color padding
+
+    # Apply padding to the image
+    squared_image = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+
+    return squared_image
+
+for label in ["LIE", "NOT_FALL"]:
     data_list = []
-    n_time_steps = 10
+    n_time_steps = 8
+    check = {}
+    model = hub.load('D:\HCMUT\Ths\Thesis\Movenet\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
+    movenet = model.signatures['serving_default']
+
     for video_source in glob.glob(f'D:/HCMUT/Ths/Thesis/LSTM/video/{label}/*.mp4'):
         print(video_source)
         # Download the model from TF Hub.
-        model = hub.load('D:\HCMUT\Ths\Thesis\Movenet\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
-        movenet = model.signatures['serving_default']
         # Threshold for 
         threshold = 0.05
 
@@ -73,6 +98,7 @@ for label in ["FALL", 'NOT_FALL', 'LIE']:
             success, img = cap.read()
             last_time = time.time()
             if not success:
+                check[video_source] = i
                 print('Total frame of this video:', i)
                 print('Error reding frame')
                 break
@@ -94,7 +120,7 @@ for label in ["FALL", 'NOT_FALL', 'LIE']:
         print("Len data before increase:",len(data_list))  
         len_data = len(data_list)      
         while (len(data_list)%n_time_steps != 0):
-            if len_data%n_time_steps >= 5:
+            if len_data%n_time_steps >= 6:
                 data_list.append(data_list[-1])
             else:
                 data_list.pop(-1)
@@ -102,6 +128,12 @@ for label in ["FALL", 'NOT_FALL', 'LIE']:
         cap.release()
         cv2.destroyAllWindows()
 
+    check_view = [ (v,k) for k,v in check.items() ]
+    check_view.sort()
+    for v,k in check_view:
+        print(f"{k}: {v}")
+
     # Write vào file csv   
     df  = pd.DataFrame(data_list)
     df.to_csv("./LSTM/data/" + label + ".csv")
+

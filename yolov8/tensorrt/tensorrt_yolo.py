@@ -5,7 +5,7 @@ from ultralytics import YOLO
 # print(tensorrt.__version__)
 
 # Load a model
-model = YOLO('yolov8/models/train5/weights/best.pt')  # load a custom trained model
+model = YOLO('D:/HCMUT/Ths/Thesis/yolov8/tensorrt/best27_12.pt')  # load a custom trained model
 
 # Export the model
 model.export(format='engine', half=True, workspace=4)
