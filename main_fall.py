@@ -22,7 +22,7 @@ BLUE =  (255, 0, 0)
 
 # VIDEO SOURCE
 video_path = 0
-video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/3_person(1).mp4'
+video_path = 'D:/HCMUT/Ths/Thesis/deep_sort/data/normal_1.mp4'
 cap = cv2.VideoCapture(video_path)
 # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -32,7 +32,8 @@ ret, frame = cap.read()
 # YOLOv8
 # Load model Yolov8
 print(torch.cuda.is_available())
-weight_path = 'D:/HCMUT/Ths/Thesis/yolov8/tensorrt/best27_12.engine'
+# weight_path = 'D:/HCMUT/Ths/Thesis/yolov8/tensorrt/best27_12.engine'
+weight_path = 'D:/HCMUT/Ths/Thesis/yolov8/tensorrt/best2_1.engine'
 # weight_path = 'D:/HCMUT/Ths/Thesis/deep_sort/best.pt'
 file_extension = pathlib.Path(weight_path).suffix
 if(file_extension == ".engine"):
@@ -149,7 +150,7 @@ def fall_detect(model, lm_list):
     elif predicted_class == 1:
         label = "FALL"
     elif predicted_class == 2:
-        label = "LIE DOWN"
+        label = "LIE"
     return label
 
 def fall_detect_frozen_graph(frozen_func, lm_list):
@@ -163,7 +164,7 @@ def fall_detect_frozen_graph(frozen_func, lm_list):
     elif predicted_class == 1:
         label = "FALL"
     elif predicted_class == 2:
-        label = "LIE DOWN"
+        label = "LIE"
     return label
 
 def yolo_detect_tensorrt(model, source, image):
@@ -211,10 +212,12 @@ COLORS = [[random.randint(0, 255) for _ in range(3)] for _ in label_map]
 frame_count = 0
 total_fps = 0
 avg_fps = 0
+have_fall = False
 while ret:
     start = time.time()
     y, x, _ = frame.shape
     # frame = cv2.resize(frame, (960, 720))
+    # print(y,x)
     
     # print(x)
     # print(y)
@@ -255,7 +258,7 @@ while ret:
         # detect pose
         temp_frame = fill_black(pose_frame, x1, y1, x2, y2)
         keypoints = pose_detect(movenet, temp_frame, keypoints_threshold)
-        frame = draw_keypoints(frame, keypoints)
+        # frame = draw_keypoints(frame, keypoints)
         if isinstance(keypoints, np.ndarray): 
             keypoints = convert_data(keypoints)
             status_people[track_id]['data'].append(keypoints)
@@ -279,42 +282,38 @@ while ret:
             del status_people[track_id]
             continue
     
-
+    count_not_fall = 0
     for track_id in status_people.keys():
         if len(status_people[track_id]['data']) == n_time_steps:
             # pose_status = fall_detect(model_lstm, status_people[track_id]['data'])
             pose_status = fall_detect_frozen_graph(frozen_func, status_people[track_id]['data'])
-            # # To avoid noise affecting the pose detection result, we will use the recover counter
-            # # After fall if status change to not fall, recover counter will count
-            # # If recover counter equal 5 consecutive frame, status will change to NOT FALL
-            # if status_people[track_id]['is_falled'] and pose_status != 'FALL':
-            #     status_people[track_id]['recover_count'] += 1
-
-            # if pose_status == 'FALL':
-            #     status_people[track_id]['is_falled'] = True
-            #     status_people[track_id]['recover_count'] = 0
-            # elif status_people[track_id]['recover_count'] == 5 and pose_status != 'FALL':
-            #     status_people[track_id]['is_falled'] = False
-
-            # if status_people[track_id]['is_falled']:
-            #     status_people[track_id]['status'] = 'FALL'
-            # else:
-            #     status_people[track_id]['status'] = pose_status
             status_people[track_id]['status'] = pose_status
 
         if track_id in track_id_list:
+            if status_people[track_id]['status'] == 'FALL':
+                have_fall = True
+            if status_people[track_id]['status'] == 'NOT FALL':
+                count_not_fall += 1
             x1, y1, x2, y2 = status_people[track_id]['bbox']
             cv2.rectangle(frame, (x1, y1), (x2, y2), (colors[track_id % len(colors)]), 3)
             frame = cv2.putText(frame, str(track_id), (x1, y1+25), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
             frame = cv2.putText(frame, status_people[track_id]['status'], (x1+30, y1+25), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (colors[track_id % len(colors)]), 2)
 
+        if count_not_fall==len(track_id_list):
+            have_fall = False
+
+        if have_fall:
+            frame = cv2.circle(frame, (x-30, 30), 20, RED, -1) 
+            frame = cv2.putText(frame, 'Fall detected!', (x-250, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, RED, 2)
+        else:
+            frame = cv2.circle(frame, (x-30, 30), 20, GREEN, -1) 
 
     end = time.time()
     # i+=1
     # print(round((end-start), 3))
     # if i > 200: break
     fps = round(1/(end-start))
-    frame = cv2.putText(frame, 'fps: '+ "%.2f"%(fps), (25, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
+    frame = cv2.putText(frame, 'fps: '+ "%.2f"%(fps), (25, y-35), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     # frame = cv2.resize(frame, (int(x/1.5), int(y/1.5)))
     cv2.imshow('frame', frame)
     cv2.waitKey(1)

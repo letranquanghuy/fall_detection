@@ -73,14 +73,14 @@ def pad_to_square(image):
 
     return squared_image
 
-for label in ["LIE", "NOT_FALL"]:
+for label in ["NOT_FALL", "FALL", "LIE"]:
     data_list = []
     n_time_steps = 8
     check = {}
     model = hub.load('D:\HCMUT\Ths\Thesis\Movenet\movenet_singlepose_thunder_4.tar\movenet_singlepose_thunder_4')
     movenet = model.signatures['serving_default']
 
-    for video_source in glob.glob(f'D:/HCMUT/Ths/Thesis/LSTM/video/{label}/*.mp4'):
+    for video_source in glob.glob(f'D:/HCMUT/Ths/Thesis/LSTM/video/new/{label}/*.mp4'):
         print(video_source)
         # Download the model from TF Hub.
         # Threshold for 
